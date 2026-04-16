@@ -1867,7 +1867,7 @@ footer {
         </div>
         <div id="commentInputInner">
           <div class="comment-input-row">
-            <div class="comment-avatar">🦊</div>
+            <div class="comment-avatar" id="commentInputAvatar" style="font-size:0.8rem;font-weight:700;">?</div>
             <div class="comment-input-box">
               <input type="text" class="comment-input" id="mainCommentInput"
                 placeholder="Add a comment…"
@@ -3011,12 +3011,13 @@ function renderComments(comicId) {
     return;
   }
 
-  // Current signed-in user (demo constant — real app uses auth)
-  const ME = 'KengDoodler';
+  // Current signed-in user — read from auth session, never hardcoded
+  const session = authLoadSession();
+  const ME      = session ? (session.displayName || session.email.split('@')[0]) : null;
 
   listEl.innerHTML = allCmts.map((c, idx) => {
     const cid      = c.id || ('u' + idx);
-    const isOwn    = (c.user === ME);          // Only show edit/delete on own comments
+    const isOwn    = ME !== null && c.user === ME; // Only show edit/delete on own comments
     const isEdited = !!c.edited;
 
     return `
@@ -3107,7 +3108,8 @@ function escHtml(str) {
    Only user-submitted comments (stored in localStorage via
    USER_COMMENTS_KEY) can be edited or deleted. Seed comments
    from COMMENT_SEEDS are read-only (other users' content).
-   The current user is identified by the constant ME = 'KengDoodler'.
+   The current user is identified by reading the live auth session —
+   never a hardcoded constant.
 ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -3272,9 +3274,21 @@ function submitComment() {
   const input = document.getElementById('mainCommentInput');
   const text  = input.value.trim();
   if (!text || !currentReaderComicId) return;
+
+  // Always pull the current user from the live session
+  const session     = authLoadSession();
+  const userName    = session ? (session.displayName || session.email.split('@')[0]) : 'Guest';
+  const userAvatar  = (userName[0] || '?').toUpperCase(); // first letter as avatar
+
   const newComment = {
-    id: 'u' + Date.now(), user: 'KengDoodler', avatar: '🦊',
-    text, time: 'just now', likes: 0, liked: false, replies: []
+    id: 'u' + Date.now(),
+    user:   userName,
+    avatar: userAvatar,
+    text,
+    time:   'just now',
+    likes:  0,
+    liked:  false,
+    replies: []
   };
   saveUserComment(currentReaderComicId, newComment);
   input.value = '';
@@ -3293,18 +3307,26 @@ function toggleReplyBox(rowId) {
 /** Post a reply to a comment */
 function submitReply(inputEl, commentId, comicId) {
   const text = inputEl.value.trim(); if (!text) return;
-  // For demo: inject reply directly into the DOM
-  const replyRow = inputEl.closest('.reply-input-row');
+
+  // Pull name from live session
+  const session    = authLoadSession();
+  const userName   = session ? (session.displayName || session.email.split('@')[0]) : 'Guest';
+  const userAvatar = (userName[0] || '?').toUpperCase();
+
+  const replyRow    = inputEl.closest('.reply-input-row');
   const repliesWrap = replyRow.previousElementSibling;
   const newReplyHtml = `
     <div class="reply-item">
-      <div class="reply-avatar" style="background:linear-gradient(135deg,#A8D5B5,#C9B8E8);">🦊</div>
+      <div class="reply-avatar" style="background:linear-gradient(135deg,#A8D5B5,#C9B8E8);font-size:0.75rem;font-weight:700;">${userAvatar}</div>
       <div class="comment-body">
-        <div class="comment-meta"><span class="comment-user">KengDoodler</span><span class="comment-time">just now</span></div>
+        <div class="comment-meta">
+          <span class="comment-user">${escHtml(userName)}</span>
+          <span class="comment-time">just now</span>
+        </div>
         <div class="comment-text">${escHtml(text)}</div>
       </div>
     </div>`;
-  // If replies section doesn't exist yet, create it
+
   if (!repliesWrap || !repliesWrap.classList.contains('comment-replies')) {
     const newWrap = document.createElement('div');
     newWrap.className = 'comment-replies';
@@ -4635,6 +4657,14 @@ function applySession() {
   const commentInner = document.getElementById('commentInputInner');
   if (commentGate)  commentGate.classList.toggle('show', !loggedIn);
   if (commentInner) commentInner.style.display = loggedIn ? 'block' : 'none';
+
+  // ── Sync the comment input avatar to the logged-in user's initial ──
+  const inputAvatar = document.getElementById('commentInputAvatar');
+  if (inputAvatar) {
+    inputAvatar.textContent = loggedIn
+      ? (session.displayName || session.email.split('@')[0])[0].toUpperCase()
+      : '?';
+  }
 
   // ── Update ME global used by renderComments ──
   window.__currentUserName = loggedIn
